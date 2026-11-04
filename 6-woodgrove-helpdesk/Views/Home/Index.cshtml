@@ -33,21 +33,15 @@
 
     <div id="card-3" class="verification-card">
         <div id="authAppMessage" class="waitingForAuthApp">Step 3: Get support</div>
-        <div id="apps-button-wrapper" class="appsWrapper" style="display:none;">
-            <p>You have successfully been verified.</p>            
-            <ul>
-                <li>Email:<div id="userUpn" class="monospacedText"></div></li>
-                <li>Name:<div id="userName" class="monospacedText"></div></li>
-                <li>Face check score:<div id="faceScore" class="monospacedText"></div></li>
-            </ul>
-            <br>
+        <div id="apps-button-wrapper" class="appsWrapper text-center" style="display:none;">
+            <p>You have successfully been verified.</p>
             <p><b>How can we help?</b></p>
             <div id="option-buttons" class="text-center">
                 @if ("true" == (Configuration.GetSection( "AppSettings" )["UseTeamsWebhook"] ?? "").ToLower()) {
-                    <button type="button" id="contact-me" class="button" onclick="submitOption('contactme', this)">Contact me!</button>
+                    <button type="button" id="contact-me" class="button" style="display:block;width:100%;margin-bottom:12px" onclick="submitOption('contactme', this)">Contact me!</button>
                 }
                 @if ("true" == (Configuration.GetSection( "AppSettings" )["UseConductorOneWebhook"] ?? "").ToLower()) {
-                    <button type="button" id="need-permissions" class="button" onclick="submitOption('requestpermissions', this)">Need permissions</button>
+                    <button type="button" id="need-permissions" class="button" style="display:block;width:100%" onclick="submitOption('requestpermissions', this)">Need permissions</button>
                 }
             </div>
             <div id="option-result" class="small-text text-center" style="margin-top:15px"></div>
@@ -150,9 +144,6 @@
                         respMsg = JSON.parse(response);
                         if (respMsg.status == 'user_authenticated') {
                             document.getElementById('message').innerHTML = "Verification successful. Please choose how we can help.";
-                            document.getElementById('userUpn').innerHTML = respMsg.email;
-                            document.getElementById('userName').innerHTML = respMsg.displayName;
-                            document.getElementById('faceScore').innerHTML = respMsg.matchConfidenceScore + "%";
                             currentRequestId = requestId;
                             document.getElementById('apps-button-wrapper').style.display = "block";
                         } else {
