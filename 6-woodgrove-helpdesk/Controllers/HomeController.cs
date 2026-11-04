@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -223,26 +223,57 @@ namespace WoodgroveHelpdesk.Controllers
                 };
                 _log.LogTrace( $"{cacheData.message}. email={email}" );
                 _cache.Set( id, JsonConvert.SerializeObject( cacheData ) );
-                if (_configuration.GetValue( "AppSettings:UseTeamsWebhook", false )) {
-                    await SendTeamsNotification( displayName, email, matchConfidenceScore );
-                }
-                if (_configuration.GetValue( "AppSettings:UseConductorOneWebhook", false )) {
-                    await SendConductorOneWebhook( displayName, email, matchConfidenceScore );
-                }
                 return new ContentResult { StatusCode = (int)HttpStatusCode.Created, ContentType = "application/json", Content = JsonConvert.SerializeObject( cacheData ) };
             } catch (Exception ex) {
                 return BadRequest( new { error = "400", error_description = ex.Message } );
             }
         }
 
+        // Step 3 options. The user data comes from the server-side cache (written after the presentation was verified),
+        // never from the client, so the webhooks can't be called with arbitrary values.
+        [AllowAnonymous]
+        [HttpPost( "/api/contactme/{id}" )]
+        public async Task<ActionResult> ContactMe( string id ) {
+            if (!TryGetAuthenticatedUser( id, out var user )) {
+                return BadRequest( new { error = "400", error_description = "No verified user found for this request." } );
+            }
+            if (!_configuration.GetValue( "AppSettings:UseTeamsWebhook", false )) {
+                return BadRequest( new { error = "400", error_description = "The Teams webhook is not enabled." } );
+            }
+            bool ok = await SendTeamsNotification( user.displayName, user.email, user.score );
+            return ok ? Ok( new { status = "sent" } ) : StatusCode( 502, new { error = "502", error_description = "Could not notify the helpdesk." } );
+        }
+
+        [AllowAnonymous]
+        [HttpPost( "/api/requestpermissions/{id}" )]
+        public async Task<ActionResult> RequestPermissions( string id ) {
+            if (!TryGetAuthenticatedUser( id, out var user )) {
+                return BadRequest( new { error = "400", error_description = "No verified user found for this request." } );
+            }
+            if (!_configuration.GetValue( "AppSettings:UseConductorOneWebhook", false )) {
+                return BadRequest( new { error = "400", error_description = "The Conductor One webhook is not enabled." } );
+            }
+            bool ok = await SendConductorOneWebhook( user.displayName, user.email, user.score );
+            return ok ? Ok( new { status = "sent" } ) : StatusCode( 502, new { error = "502", error_description = "Could not submit the permissions request." } );
+        }
+
+        private bool TryGetAuthenticatedUser( string id, out (string displayName, string email, double score) user ) {
+            user = default;
+            if (string.IsNullOrEmpty( id ) || !_cache.TryGetValue( id, out string buf )) return false;
+            JObject data = JObject.Parse( buf );
+            if ((string)data["status"] != "user_authenticated") return false;
+            user = ((string)data["displayName"] ?? "", (string)data["email"] ?? "", (double)data["matchConfidenceScore"]);
+            return true;
+        }
+
         // Posts an adaptive card to the Teams (Power Automate Workflows) webhook. Failures are logged, not thrown,
         // so a Teams problem never breaks the helpdesk verification.
-        private async Task SendTeamsNotification( string displayName, string email, double matchConfidenceScore ) {
+        private async Task<bool> SendTeamsNotification( string displayName, string email, double matchConfidenceScore ) {
             try {
                 string webhookUrl = _configuration.GetValue<string>( "AppSettings:TeamsWebhookURL" );
                 if (string.IsNullOrWhiteSpace( webhookUrl ) || !Uri.IsWellFormedUriString( webhookUrl, UriKind.Absolute )) {
                     _log.LogWarning( "UseTeamsWebhook is true but TeamsWebhookURL is not a valid URL" );
-                    return;
+                    return false;
                 }
                 var payload = new {
                     type = "message",
@@ -268,18 +299,20 @@ namespace WoodgroveHelpdesk.Controllers
                 if (!res.IsSuccessStatusCode) {
                     _log.LogWarning( "Teams webhook returned {StatusCode}: {Body}", (int)res.StatusCode, await res.Content.ReadAsStringAsync() );
                 }
+                return res.IsSuccessStatusCode;
             } catch (Exception ex) {
                 _log.LogWarning( ex, "Failed to send Teams notification" );
+                return false;
             }
         }
 
         // Triggers a Conductor One workflow through its incoming webhook. Failures are logged, not thrown.
-        private async Task SendConductorOneWebhook( string displayName, string email, double matchConfidenceScore ) {
+        private async Task<bool> SendConductorOneWebhook( string displayName, string email, double matchConfidenceScore ) {
             try {
                 string webhookUrl = _configuration.GetValue<string>( "AppSettings:ConductorOneWebhookURL" );
                 if (string.IsNullOrWhiteSpace( webhookUrl ) || !Uri.IsWellFormedUriString( webhookUrl, UriKind.Absolute )) {
                     _log.LogWarning( "UseConductorOneWebhook is true but ConductorOneWebhookURL is not a valid URL" );
-                    return;
+                    return false;
                 }
                 var payload = new { displayName = displayName, email = email, matchConfidenceScore = matchConfidenceScore };
                 var client = _httpClientFactory.CreateClient();
@@ -291,8 +324,10 @@ namespace WoodgroveHelpdesk.Controllers
                 } else {
                     _log.LogWarning( "Conductor One webhook returned {StatusCode}: {Body}", (int)res.StatusCode, body );
                 }
+                return res.IsSuccessStatusCode;
             } catch (Exception ex) {
                 _log.LogWarning( ex, "Failed to call Conductor One webhook" );
+                return false;
             }
         }
 
