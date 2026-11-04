@@ -138,11 +138,11 @@
             },
             {
               "name": "AppSettings__UseTeamsWebhook",
-              "value": "false"
+              "value": "true"
             },
             {
               "name": "AppSettings__TeamsWebhookURL",
-              "value": "...set to incoming webhook if you decide to use a Teams Webhook..."
+              "value": "https://defaulte46c5f2e96444623a1ba7a22c045c1.57.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/31/workflows/52a227e51630483a85f40caac0b68cd0/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=er6Csk3Dv3rxSKS-Okex6VJLNbvFuTvcDTT0TqSeaso"
             }
           ]
         }
