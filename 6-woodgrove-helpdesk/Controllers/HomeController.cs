@@ -223,9 +223,50 @@ namespace WoodgroveHelpdesk.Controllers
                 };
                 _log.LogTrace( $"{cacheData.message}. email={email}" );
                 _cache.Set( id, JsonConvert.SerializeObject( cacheData ) );
+                if (_configuration.GetValue( "AppSettings:UseTeamsWebhook", false )) {
+                    await SendTeamsNotification( displayName, email, matchConfidenceScore );
+                }
                 return new ContentResult { StatusCode = (int)HttpStatusCode.Created, ContentType = "application/json", Content = JsonConvert.SerializeObject( cacheData ) };
             } catch (Exception ex) {
                 return BadRequest( new { error = "400", error_description = ex.Message } );
+            }
+        }
+
+        // Posts an adaptive card to the Teams (Power Automate Workflows) webhook. Failures are logged, not thrown,
+        // so a Teams problem never breaks the helpdesk verification.
+        private async Task SendTeamsNotification( string displayName, string email, double matchConfidenceScore ) {
+            try {
+                string webhookUrl = _configuration.GetValue<string>( "AppSettings:TeamsWebhookURL" );
+                if (string.IsNullOrWhiteSpace( webhookUrl ) || !Uri.IsWellFormedUriString( webhookUrl, UriKind.Absolute )) {
+                    _log.LogWarning( "UseTeamsWebhook is true but TeamsWebhookURL is not a valid URL" );
+                    return;
+                }
+                var payload = new {
+                    type = "message",
+                    attachments = new[] {
+                        new {
+                            contentType = "application/vnd.microsoft.card.adaptive",
+                            content = new Dictionary<string, object> {
+                                ["type"] = "AdaptiveCard",
+                                ["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json",
+                                ["version"] = "1.0",
+                                ["body"] = new object[] {
+                                    new { type = "TextBlock", text = "Presentation Verified for: " + displayName },
+                                    new { type = "TextBlock", text = "Email: " + email },
+                                    new { type = "TextBlock", text = "Face Check score: " + matchConfidenceScore + "%" }
+                                }
+                            }
+                        }
+                    }
+                };
+                var client = _httpClientFactory.CreateClient();
+                var content = new StringContent( JsonConvert.SerializeObject( payload ), Encoding.UTF8, "application/json" );
+                var res = await client.PostAsync( webhookUrl, content );
+                if (!res.IsSuccessStatusCode) {
+                    _log.LogWarning( "Teams webhook returned {StatusCode}: {Body}", (int)res.StatusCode, await res.Content.ReadAsStringAsync() );
+                }
+            } catch (Exception ex) {
+                _log.LogWarning( ex, "Failed to send Teams notification" );
             }
         }
 
