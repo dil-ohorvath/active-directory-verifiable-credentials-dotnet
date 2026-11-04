@@ -226,6 +226,9 @@ namespace WoodgroveHelpdesk.Controllers
                 if (_configuration.GetValue( "AppSettings:UseTeamsWebhook", false )) {
                     await SendTeamsNotification( displayName, email, matchConfidenceScore );
                 }
+                if (_configuration.GetValue( "AppSettings:UseConductorOneWebhook", false )) {
+                    await SendConductorOneWebhook( displayName, email, matchConfidenceScore );
+                }
                 return new ContentResult { StatusCode = (int)HttpStatusCode.Created, ContentType = "application/json", Content = JsonConvert.SerializeObject( cacheData ) };
             } catch (Exception ex) {
                 return BadRequest( new { error = "400", error_description = ex.Message } );
@@ -267,6 +270,29 @@ namespace WoodgroveHelpdesk.Controllers
                 }
             } catch (Exception ex) {
                 _log.LogWarning( ex, "Failed to send Teams notification" );
+            }
+        }
+
+        // Triggers a Conductor One workflow through its incoming webhook. Failures are logged, not thrown.
+        private async Task SendConductorOneWebhook( string displayName, string email, double matchConfidenceScore ) {
+            try {
+                string webhookUrl = _configuration.GetValue<string>( "AppSettings:ConductorOneWebhookURL" );
+                if (string.IsNullOrWhiteSpace( webhookUrl ) || !Uri.IsWellFormedUriString( webhookUrl, UriKind.Absolute )) {
+                    _log.LogWarning( "UseConductorOneWebhook is true but ConductorOneWebhookURL is not a valid URL" );
+                    return;
+                }
+                var payload = new { displayName = displayName, email = email, matchConfidenceScore = matchConfidenceScore };
+                var client = _httpClientFactory.CreateClient();
+                var content = new StringContent( JsonConvert.SerializeObject( payload ), Encoding.UTF8, "application/json" );
+                var res = await client.PostAsync( webhookUrl, content );
+                string body = await res.Content.ReadAsStringAsync();
+                if (res.IsSuccessStatusCode) {
+                    _log.LogInformation( "Conductor One webhook returned {StatusCode}: {Body}", (int)res.StatusCode, body );
+                } else {
+                    _log.LogWarning( "Conductor One webhook returned {StatusCode}: {Body}", (int)res.StatusCode, body );
+                }
+            } catch (Exception ex) {
+                _log.LogWarning( ex, "Failed to call Conductor One webhook" );
             }
         }
 
