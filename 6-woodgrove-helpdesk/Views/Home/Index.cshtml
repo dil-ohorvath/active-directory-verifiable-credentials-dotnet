@@ -1,11 +1,11 @@
 @using Microsoft.Extensions.Configuration
 @inject IConfiguration Configuration
 @{
-    ViewData["Title"] = $"{Configuration.GetSection( "AppSettings" )["CompanyName"]} HelpDesk";
+    ViewData["Title"] = $"{Configuration.GetSection( "AppSettings" )["CompanyName"]} IT Helpdesk";
 }
 
 <div style="text-align: center;" >
-    <h1>Welcome to @Configuration.GetSection( "AppSettings" )["CompanyName"] Helpdesk portal</h1>
+    <h1>@Configuration.GetSection( "AppSettings" )["CompanyName"] IT Helpdesk</h1>
     @if (null != ViewData["displayName"]) {
         <h3>Welcome @ViewData["displayName"]</h3>
     }
