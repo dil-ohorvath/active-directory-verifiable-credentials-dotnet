@@ -159,7 +159,7 @@
 
             (() => {
                 const sendMessage = window.tws.bootstrap();
-                sendMessage('@Configuration.GetSection( "AppSettings" )["TeamsWebhookURL"]', formatted_Card_Payload ).then(() => {
+                sendMessage(@Html.Raw(System.Text.Json.JsonSerializer.Serialize(Configuration.GetSection( "AppSettings" )["TeamsWebhookURL"])), formatted_Card_Payload ).then(() => {
                     console.info('Message sent!')
                 });
             })();
