@@ -35,6 +35,7 @@
         <div id="authAppMessage" class="waitingForAuthApp">Step 3: Get support</div>
         <div id="apps-button-wrapper" class="appsWrapper text-center" style="display:none;">
             <p>You have successfully been verified.</p>
+            <p>Your code: <b id="verification-code" style="font-size:1.5em;letter-spacing:4px"></b></p>
             <p><b>How can we help?</b></p>
             <div id="option-buttons" class="text-center">
                 @if ("true" == (Configuration.GetSection( "AppSettings" )["UseTeamsWebhook"] ?? "").ToLower()) {
@@ -145,6 +146,7 @@
                         if (respMsg.status == 'user_authenticated') {
                             document.getElementById('message').innerHTML = "Verification successful. Please choose how we can help.";
                             currentRequestId = requestId;
+                            document.getElementById('verification-code').textContent = respMsg.code;
                             document.getElementById('apps-button-wrapper').style.display = "block";
                         } else {
                             document.getElementById('message').innerHTML = respMsg.error_description;

@@ -210,9 +210,10 @@ namespace WoodgroveHelpdesk.Controllers
                     return BadRequest( new { error = "400", error_description = $"{emailClaimName}/{displayNameClaimName} missing in presented credential." } );
                 }
                 string domain = linkedDomain.Replace("https://", "").Replace("/", "");
-                //
+                string code = System.Security.Cryptography.RandomNumberGenerator.GetInt32( 0, 10000 ).ToString( "D4" );
                 var cacheData = new {
                     status = "user_authenticated",
+                    code = code,
                     message = $"{credentialType} presented",
                     displayName = displayName,
                     email = email,
@@ -240,7 +241,7 @@ namespace WoodgroveHelpdesk.Controllers
             if (!_configuration.GetValue( "AppSettings:UseTeamsWebhook", false )) {
                 return BadRequest( new { error = "400", error_description = "The Teams webhook is not enabled." } );
             }
-            bool ok = await SendTeamsNotification( user.displayName, user.email, user.score );
+            bool ok = await SendTeamsNotification( user.displayName, user.email, user.score, user.code );
             return ok ? Ok( new { status = "sent" } ) : StatusCode( 502, new { error = "502", error_description = "Could not notify the helpdesk." } );
         }
 
@@ -253,22 +254,22 @@ namespace WoodgroveHelpdesk.Controllers
             if (!_configuration.GetValue( "AppSettings:UseConductorOneWebhook", false )) {
                 return BadRequest( new { error = "400", error_description = "The Conductor One webhook is not enabled." } );
             }
-            bool ok = await SendConductorOneWebhook( user.displayName, user.email, user.score );
+            bool ok = await SendConductorOneWebhook( user.displayName, user.email, user.score, user.code );
             return ok ? Ok( new { status = "sent" } ) : StatusCode( 502, new { error = "502", error_description = "Could not submit the permissions request." } );
         }
 
-        private bool TryGetAuthenticatedUser( string id, out (string displayName, string email, double score) user ) {
+        private bool TryGetAuthenticatedUser( string id, out (string displayName, string email, double score, string code) user ) {
             user = default;
             if (string.IsNullOrEmpty( id ) || !_cache.TryGetValue( id, out string buf )) return false;
             JObject data = JObject.Parse( buf );
             if ((string)data["status"] != "user_authenticated") return false;
-            user = ((string)data["displayName"] ?? "", (string)data["email"] ?? "", (double)data["matchConfidenceScore"]);
+            user = ((string)data["displayName"] ?? "", (string)data["email"] ?? "", (double)data["matchConfidenceScore"], (string)data["code"] ?? "");
             return true;
         }
 
         // Posts an adaptive card to the Teams (Power Automate Workflows) webhook. Failures are logged, not thrown,
         // so a Teams problem never breaks the helpdesk verification.
-        private async Task<bool> SendTeamsNotification( string displayName, string email, double matchConfidenceScore ) {
+        private async Task<bool> SendTeamsNotification( string displayName, string email, double matchConfidenceScore, string code ) {
             try {
                 string webhookUrl = _configuration.GetValue<string>( "AppSettings:TeamsWebhookURL" );
                 if (string.IsNullOrWhiteSpace( webhookUrl ) || !Uri.IsWellFormedUriString( webhookUrl, UriKind.Absolute )) {
@@ -287,7 +288,8 @@ namespace WoodgroveHelpdesk.Controllers
                                 ["body"] = new object[] {
                                     new { type = "TextBlock", text = "Presentation Verified for: " + displayName },
                                     new { type = "TextBlock", text = "Email: " + email },
-                                    new { type = "TextBlock", text = "Face Check score: " + matchConfidenceScore + "%" }
+                                    new { type = "TextBlock", text = "Face Check score: " + matchConfidenceScore + "%" },
+                                    new { type = "TextBlock", text = "Code: " + code }
                                 }
                             }
                         }
@@ -307,14 +309,14 @@ namespace WoodgroveHelpdesk.Controllers
         }
 
         // Triggers a Conductor One workflow through its incoming webhook. Failures are logged, not thrown.
-        private async Task<bool> SendConductorOneWebhook( string displayName, string email, double matchConfidenceScore ) {
+        private async Task<bool> SendConductorOneWebhook( string displayName, string email, double matchConfidenceScore, string code ) {
             try {
                 string webhookUrl = _configuration.GetValue<string>( "AppSettings:ConductorOneWebhookURL" );
                 if (string.IsNullOrWhiteSpace( webhookUrl ) || !Uri.IsWellFormedUriString( webhookUrl, UriKind.Absolute )) {
                     _log.LogWarning( "UseConductorOneWebhook is true but ConductorOneWebhookURL is not a valid URL" );
                     return false;
                 }
-                var payload = new { displayName = displayName, email = email, matchConfidenceScore = matchConfidenceScore };
+                var payload = new { displayName = displayName, email = email, matchConfidenceScore = matchConfidenceScore, code = code };
                 var client = _httpClientFactory.CreateClient();
                 var content = new StringContent( JsonConvert.SerializeObject( payload ), Encoding.UTF8, "application/json" );
                 var res = await client.PostAsync( webhookUrl, content );
